@@ -71,6 +71,17 @@ export class AuthService {
     this.currentUser.set(user);
   }
 
+  saveTokenDirectly(token: string, role = 'restaurant_owner'): void {
+    const user: AuthUser = {
+      access_token: token,
+      role: role,
+      user_id: 0,
+      full_name: 'Hotel Partner',
+      redirect_to: '/hotel-portal/dashboard',
+    };
+    this.saveSession(user);
+  }
+
   logout(): void {
     localStorage.removeItem('le_admin_backup');
     localStorage.removeItem(environment.userKey);
