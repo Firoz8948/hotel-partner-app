@@ -1,0 +1,158 @@
+// features/hotel-portal/components/hp-shell/hp-shell.component.ts
+import {
+  Component, OnInit, signal,
+  HostListener, inject
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { RouterModule, Router, NavigationEnd } from '@angular/router';
+import { AuthService } from '../../../../core/services/auth.service';
+import { ImpersonationExitService } from '../../../../core/services/impersonation-exit.service';
+import { HotelPortalService } from '../../services/hotel-portal.service';
+import { environment } from '../../../../../environments/environment';
+import { filter } from 'rxjs/operators';
+import { HpIconComponent, HpIconName } from '../shared/hp-icon/hp-icon.component';
+
+import { NotificationService } from '../../../../core/services/notification.service';
+
+interface NavItem {
+  label:   string;
+  iconId:  HpIconName;
+  route:   string;
+  badge?:  number;
+}
+
+interface MobileNavItem {
+  label: string;
+  iconId: HpIconName;
+  route: string;
+  showPendingBadge?: boolean;
+}
+
+@Component({
+  selector: 'app-hp-shell',
+  standalone: true,
+  imports: [CommonModule, RouterModule, HpIconComponent],
+  templateUrl: './hp-shell.component.html',
+  styleUrl:    './hp-shell.component.scss'
+})
+export class HpShellComponent implements OnInit {
+
+  auth    = inject(AuthService);
+  impersonation = inject(ImpersonationExitService);
+  service = inject(HotelPortalService);
+  router  = inject(Router);
+  notif   = inject(NotificationService);
+
+  isOpen          = signal(false);   // restaurant open/closed
+  isSidebarOpen   = signal(false);   // mobile sidebar
+  isMobile        = signal(false);
+  restaurantName  = signal('My Restaurant');
+  pendingCount    = signal(0);
+  impersonating   = signal(false);
+
+  private lastPendingCount = 0;
+  private isFirstShellLoad = true;
+  private pollTimer: any;
+
+  navItems: NavItem[] = [
+    { label: 'Dashboard',       iconId: 'dashboard',       route: '/hotel-portal/dashboard'       },
+    { label: 'Incoming Orders', iconId: 'bell',            route: '/hotel-portal/incoming-orders'  },
+    { label: 'Active Orders',   iconId: 'flame',           route: '/hotel-portal/active-orders'    },
+    { label: 'Order History',   iconId: 'clipboard',       route: '/hotel-portal/order-history'    },
+    { label: 'Menu Manage',     iconId: 'utensils',        route: '/hotel-portal/menu'             },
+    { label: 'Earnings',        iconId: 'wallet',          route: '/hotel-portal/earnings'         },
+    { label: 'Settings',        iconId: 'settings',        route: '/hotel-portal/settings'         },
+  ];
+
+  mobileNavItems: MobileNavItem[] = [
+    { label: 'Home',     iconId: 'bell',      route: '/hotel-portal/incoming-orders', showPendingBadge: true },
+    { label: 'Active',   iconId: 'flame',     route: '/hotel-portal/active-orders' },
+    { label: 'History',  iconId: 'clipboard', route: '/hotel-portal/order-history' },
+    { label: 'Earnings', iconId: 'wallet',    route: '/hotel-portal/earnings' },
+  ];
+
+  ngOnInit() {
+    this.impersonating.set(this.auth.isRestaurantImpersonating());
+    this.checkMobile();
+    this.loadRestaurantInfo();
+
+    // Poll every 10 seconds for background notifications across all tabs
+    this.pollTimer = setInterval(() => this.loadRestaurantInfo(), 10000);
+
+    // Close mobile sidebar on route change
+    this.router.events.pipe(
+      filter(e => e instanceof NavigationEnd)
+    ).subscribe(() => {
+      this.isSidebarOpen.set(false);
+    });
+  }
+
+  @HostListener('window:resize')
+  checkMobile() {
+    this.isMobile.set(window.innerWidth <= 900);
+  }
+
+  loadRestaurantInfo() {
+    this.service.getDashboard().subscribe({
+      next: (data) => {
+        this.restaurantName.set(data.restaurant.name);
+        this.isOpen.set(data.restaurant.is_open);
+
+        const currentPending = data.stats.pending_orders;
+        if (currentPending > this.lastPendingCount && !this.isFirstShellLoad) {
+          this.notif.notifyNewOrder();
+        }
+
+        this.lastPendingCount = currentPending;
+        this.isFirstShellLoad = false;
+        this.pendingCount.set(currentPending);
+
+        // Set badge on incoming orders
+        this.navItems = this.navItems.map(item =>
+          item.label === 'Incoming Orders'
+            ? { ...item, badge: currentPending }
+            : item
+        );
+      }
+    });
+  }
+
+  toggleShop() {
+    this.service.toggleShopStatus().subscribe(res => {
+      this.isOpen.set(res.is_open);
+    });
+  }
+
+  toggleSidebar()  { this.isSidebarOpen.update(v => !v); }
+  closeSidebar()   { this.isSidebarOpen.set(false);       }
+
+  exitImpersonation() {
+    const restore = () => {
+      if (this.auth.exitRestaurantImpersonation()) {
+        window.location.assign(environment.mainWebUrl);
+      } else {
+        this.auth.logout();
+      }
+    };
+    // End the audited server session while still holding the impersonation token.
+    this.impersonation.exit().subscribe({
+      next: () => restore(),
+      error: () => restore(),
+    });
+  }
+
+  logout() {
+    if (this.impersonating()) {
+      this.exitImpersonation();
+      return;
+    }
+    this.auth.logout();
+  }
+
+  get user() { return this.auth.currentUser(); }
+
+  isActive(route: string): boolean {
+    return this.router.url === route ||
+           this.router.url.startsWith(route + '/');
+  }
+}
