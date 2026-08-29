@@ -67,12 +67,14 @@ export class HpIncomingOrdersComponent implements OnInit, OnDestroy {
   }
 
   accept(id: number) {
+    this.notif.stopSound();
     this.service.updateOrderStatus(id, 'accepted').subscribe(
       () => this.loadOrders()
     );
   }
 
   reject(id: number) {
+    this.notif.stopSound();
     if (confirm('Cancel this order?')) {
       this.service.updateOrderStatus(id, 'cancelled').subscribe(
         () => this.loadOrders()

@@ -99,8 +99,11 @@ export class HpShellComponent implements OnInit {
         this.isOpen.set(data.restaurant.is_open);
 
         const currentPending = data.stats.pending_orders;
-        if (currentPending > this.lastPendingCount && !this.isFirstShellLoad) {
+        if (currentPending > this.lastPendingCount && !this.isFirstShellLoad && !this.router.url.includes('incoming-orders')) {
           this.notif.notifyNewOrder();
+        } else if (currentPending < this.lastPendingCount) {
+          // If pending orders decreased (e.g. accepted), stop sound immediately
+          this.notif.stopSound();
         }
 
         this.lastPendingCount = currentPending;
