@@ -1,6 +1,6 @@
 import { PortalPageHeaderComponent } from '../../../../shared/portal-page-header/portal-page-header.component';
 // hp-dashboard.component.ts
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import {
@@ -16,15 +16,21 @@ import { HpIconComponent } from '../shared/hp-icon/hp-icon.component';
   templateUrl: './hp-dashboard.component.html',
   styleUrl:    './hp-dashboard.component.scss'
 })
-export class HpDashboardComponent implements OnInit {
+export class HpDashboardComponent implements OnInit, OnDestroy {
   data    = signal<DashboardData | null>(null);
   loading = signal(true);
   refreshing = signal(false);
+  private pollInterval?: any;
 
   constructor(private service: HotelPortalService) {}
 
   ngOnInit() {
     this.loadDashboard();
+    this.pollInterval = setInterval(() => this.loadDashboard(true), 5000);
+  }
+
+  ngOnDestroy() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
   }
 
   loadDashboard(refresh = false) {

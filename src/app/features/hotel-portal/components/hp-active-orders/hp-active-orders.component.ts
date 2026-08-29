@@ -1,6 +1,6 @@
 import { PortalPageHeaderComponent } from '../../../../shared/portal-page-header/portal-page-header.component';
 // hp-active-orders.component.ts
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { HotelPortalService, Order } from '../../services/hotel-portal.service';
@@ -13,9 +13,10 @@ import { HpIconComponent, HpIconName } from '../shared/hp-icon/hp-icon.component
   templateUrl: './hp-active-orders.component.html',
   styleUrl:    './hp-active-orders.component.scss'
 })
-export class HpActiveOrdersComponent implements OnInit {
+export class HpActiveOrdersComponent implements OnInit, OnDestroy {
   orders  = signal<Order[]>([]);
   loading = signal(true);
+  private pollInterval?: any;
 
   statusSteps = [
     { key: 'accepted', label: 'Accepted' },
@@ -24,7 +25,14 @@ export class HpActiveOrdersComponent implements OnInit {
 
   constructor(private service: HotelPortalService) {}
 
-  ngOnInit() { this.loadOrders(); }
+  ngOnInit() {
+    this.loadOrders();
+    this.pollInterval = setInterval(() => this.loadOrders(), 5000);
+  }
+
+  ngOnDestroy() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+  }
 
   loadOrders() {
     this.service.getOrders('active').subscribe({
