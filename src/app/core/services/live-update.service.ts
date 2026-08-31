@@ -16,7 +16,7 @@ export interface AppManifest {
 @Injectable({ providedIn: 'root' })
 export class LiveUpdateService {
   private http = inject(HttpClient);
-  private currentVersion = environment.version || '1.0.0';
+  private isChecking = false;
 
   constructor() {
     this.checkForUpdates();
@@ -24,40 +24,78 @@ export class LiveUpdateService {
 
   async checkForUpdates() {
     if (!Capacitor.isNativePlatform()) return;
+    if (this.isChecking) return;
+    this.isChecking = true;
 
     try {
+      // 1. Notify Capgo that current app bundle loaded successfully
       await CapacitorUpdater.notifyAppReady();
 
-      const url = `${environment.apiBaseUrl}/app-updates/manifest?app_id=hotel_partner&version=${encodeURIComponent(this.currentVersion)}`;
+      // 2. Determine current active bundle version
+      let currentVersion = localStorage.getItem('le_ota_version') || environment.version || '1.0.0';
+      try {
+        const currentBundle = await CapacitorUpdater.current();
+        if (
+          currentBundle?.bundle?.version &&
+          currentBundle.bundle.version !== 'builtin' &&
+          currentBundle.bundle.version !== 'default'
+        ) {
+          currentVersion = currentBundle.bundle.version;
+          localStorage.setItem('le_ota_version', currentVersion);
+        }
+      } catch (e) {
+        console.warn('[OTA Hotel] Could not query current bundle:', e);
+      }
+
+      console.log(`[OTA Hotel] Checking updates for hotel app. Active version: ${currentVersion}`);
+
+      const url = `${environment.apiBaseUrl}/app-updates/manifest?app_id=hotel_partner&version=${encodeURIComponent(currentVersion)}`;
       this.http.get<AppManifest>(url).subscribe({
         next: async (manifest) => {
-          if (manifest.update_available && manifest.bundle_url && manifest.version) {
-            console.log(`[OTA Hotel] Downloading live update version ${manifest.version}...`);
-            try {
-              const bundle = await CapacitorUpdater.download({
-                url: manifest.bundle_url,
-                version: manifest.version,
-                checksum: manifest.checksum || undefined,
-              });
+          if (!manifest.update_available || !manifest.bundle_url || !manifest.version) {
+            console.log('[OTA Hotel] App is up to date.');
+            return;
+          }
 
-              if (bundle) {
-                console.log(`[OTA Hotel] Live update ${manifest.version} downloaded.`);
-                if (manifest.is_mandatory) {
-                  await CapacitorUpdater.set(bundle);
+          if (manifest.version === currentVersion) {
+            console.log('[OTA Hotel] Already running version', manifest.version);
+            return;
+          }
+
+          console.log(`[OTA Hotel] Downloading live update version ${manifest.version}...`);
+          try {
+            const bundle = await CapacitorUpdater.download({
+              url: manifest.bundle_url,
+              version: manifest.version,
+              checksum: manifest.checksum || undefined,
+            });
+
+            if (bundle) {
+              console.log(`[OTA Hotel] Live update ${manifest.version} downloaded.`);
+              localStorage.setItem('le_ota_version', manifest.version);
+              await CapacitorUpdater.set(bundle);
+
+              if (manifest.is_mandatory) {
+                const reloadedKey = `le_ota_reloaded_${manifest.version}`;
+                if (!sessionStorage.getItem(reloadedKey)) {
+                  sessionStorage.setItem(reloadedKey, 'true');
+                  console.log(`[OTA Hotel] Reloading app for mandatory update ${manifest.version}...`);
                   await CapacitorUpdater.reload();
-                } else {
-                  await CapacitorUpdater.set(bundle);
                 }
               }
-            } catch (err) {
-              console.warn('[OTA Hotel] Download failed:', err);
             }
+          } catch (err) {
+            console.warn('[OTA Hotel] Download failed:', err);
           }
         },
-        error: () => {}
+        error: (err) => {
+          console.warn('[OTA Hotel] Manifest check failed:', err);
+        },
       });
     } catch (e) {
       console.warn('[OTA Hotel] Check failed:', e);
+    } finally {
+      this.isChecking = false;
     }
   }
 }
