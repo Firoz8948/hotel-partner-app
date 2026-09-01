@@ -16,7 +16,10 @@ import { HpIconComponent, HpIconName } from '../shared/hp-icon/hp-icon.component
 export class HpActiveOrdersComponent implements OnInit, OnDestroy {
   orders  = signal<Order[]>([]);
   loading = signal(true);
+  busyId  = signal<number | null>(null);
+  toast   = signal<string | null>(null);
   private pollInterval?: any;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   statusSteps = [
     { key: 'accepted', label: 'Accepted' },
@@ -32,6 +35,7 @@ export class HpActiveOrdersComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
   }
 
   loadOrders() {
@@ -60,10 +64,28 @@ export class HpActiveOrdersComponent implements OnInit, OnDestroy {
   }
 
   advanceStatus(order: Order) {
+    if (this.busyId()) return;
     const next = this.nextStatus(order.status);
-    this.service.updateOrderStatus(order.id, next).subscribe(
-      () => this.loadOrders()
-    );
+    this.busyId.set(order.id);
+    this.service.updateOrderStatus(order.id, next).subscribe({
+      next: () => {
+        this.busyId.set(null);
+        this.showToast('Wait for delivery partner');
+        this.loadOrders();
+      },
+      error: () => this.busyId.set(null),
+    });
+  }
+
+  riderInitial(name?: string | null): string {
+    const t = (name || 'D').trim();
+    return t ? t.charAt(0).toUpperCase() : 'D';
+  }
+
+  private showToast(message: string) {
+    this.toast.set(message);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => this.toast.set(null), 2000);
   }
 
   getStepIndex(status: string): number {
