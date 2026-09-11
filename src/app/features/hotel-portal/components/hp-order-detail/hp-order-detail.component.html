@@ -155,8 +155,20 @@
           <div class="bill-rows">
             <div class="bill-row bill-row--total">
               <span>Item Total (Seller Transfer Price)</span>
-              <span>₹{{ order()!.total_amount }}</span>
+              <span>₹{{ order()!.total_amount - (order()!.packing_charge || 0) }}</span>
             </div>
+            @if ((order()!.packing_charge || 0) > 0) {
+              <div class="bill-row">
+                <span>Packaging charge</span>
+                <span>₹{{ order()!.packing_charge }}</span>
+              </div>
+            }
+            @if ((order()!.packing_charge || 0) > 0) {
+              <div class="bill-row bill-row--total">
+                <span>Seller Transfer Total</span>
+                <span>₹{{ order()!.total_amount }}</span>
+              </div>
+            }
           </div>
 
           <!-- Payment Method -->
